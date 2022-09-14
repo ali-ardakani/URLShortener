@@ -65,6 +65,7 @@ class UrlShortenerCreateView(generics.CreateAPIView):
     Note
     ----
     The algorithm used to generate the shortened URL is seeded with the last URL's ID. This means that if the last URL's ID is 0, the algorithm will start from 0. If the last URL's ID is 1, the algorithm will start from 1. This is to ensure that the shortened URLs are unique.(The output of the algorithm is a string of characters chosen randomly from the set of characters in `ascii_letters + digits` and the length of the string is equal to the `max_length` of the `short_url` field in the `Url` model.)
+    The use of seed was to prevent the replication of random generator loop. For example, if the loop method was used, it would be necessary to check our database for the existence of the generated string. This would be a costly operation. The use of seed ensures that the algorithm will not repeat itself.
     """
     serializer_class = serializers.UrlSerializer
 
