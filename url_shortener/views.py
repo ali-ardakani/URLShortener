@@ -1,3 +1,4 @@
+from http.client import HTTPResponse
 from string import ascii_letters, digits
 
 from django.core.validators import URLValidator
@@ -66,6 +67,7 @@ class UrlShortenerCreateView(generics.CreateAPIView):
     ----
     The algorithm used to generate the shortened URL is seeded with the last URL's ID. This means that if the last URL's ID is 0, the algorithm will start from 0. If the last URL's ID is 1, the algorithm will start from 1. This is to ensure that the shortened URLs are unique.(The output of the algorithm is a string of characters chosen randomly from the set of characters in `ascii_letters + digits` and the length of the string is equal to the `max_length` of the `short_url` field in the `Url` model.)
     The use of seed was to prevent the replication of random generator loop. For example, if the loop method was used, it would be necessary to check our database for the existence of the generated string. This would be a costly operation. The use of seed ensures that the algorithm will not repeat itself.
+    All the steps above are done in the database(you can see the SQL query in the `url_shortener/migrations/queries/sql_generator.text` file). This is to ensure that the database is not locked for a long time.
     """
     serializer_class = serializers.UrlSerializer
 
@@ -82,10 +84,29 @@ class UrlShortenerCreateView(generics.CreateAPIView):
         # Check if the URL has already been shortened
         if Url.objects.filter(url=request.data['url']).exists():
             return Response({'error': 'URL already shortened'}, status=400)
-        return super().create(request, *args, **kwargs)
+        super().create(request, *args, **kwargs)
+        response = Url.objects.filter(url=request.data['url']).values()[0]
+        del response['id']
+        return Response(response, status=201)
 
-    def perform_create(self, serializer):
-        serializer.save(short_url=self.generator.generate())
+    # def perform_create(self, serializer):
+        # This is because if for any reason we have a duplicate short_url
+        # (such as it was changed manually in the database),
+        # it will be caught by the while loop.
+        # (This rarely happens, and if it happens, it quickly gets fixed.(just for prevention))
+        # while True:
+        #     short_url = self.generator.generate()
+        #     if Url.objects.filter(short_url=short_url).exists():
+        #         last_id = Url.objects.last().id
+        #         if self.generator.seed == last_id:
+        #             self.generator.seed += 1
+        #         else:
+        #             self.generator.seed = last_id
+        #         short_url = self.generator.generate()
+        #     else:
+        #         break
+        # serializer.save(short_url=self.generator.generate())
+        # serializer.save()
 
     def post(self, request, *args, **kwargs):
         # Validate the URL
