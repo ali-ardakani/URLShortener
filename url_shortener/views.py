@@ -1,23 +1,17 @@
-from http.client import HTTPResponse
-from string import ascii_letters, digits
+from threading import Thread
 
+from django.core.cache import cache
 from django.core.validators import URLValidator
-from rest_framework import generics
-from rest_framework.views import APIView
-# Http404
-from rest_framework.exceptions import NotFound
-from rest_framework.response import Response
 from django.http import HttpResponseRedirect
-from django.views.generic import TemplateView
-from . import serializers
-from .models import Url
-from .short_url_generator.generator import RandomGenerator
+from django.utils.decorators import method_decorator
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
-from django.utils.decorators import method_decorator
-from django.core.cache import cache
-from threading import Thread
-from django.views.decorators.cache import cache_page
+from rest_framework import generics
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from . import serializers
+from .models import Url
 
 
 class WelcomeView(generics.GenericAPIView):
@@ -32,36 +26,41 @@ class WelcomeView(generics.GenericAPIView):
     serializer_class = serializers.WelcomeSerializer
 
     def get(self, request):
-        serializer = self.get_serializer(data={'message': 'Welcome to the URL shortener API'})
+        serializer = self.get_serializer(
+            data={'message': 'Welcome to the URL shortener API'})
         serializer.is_valid()
         return Response(serializer.data)
 
-@method_decorator(name='post', decorator=swagger_auto_schema(
-    operation_summary="Get a shortened URL",
-    operation_id="url_shortener_get_short_url",
-    request_body=serializers.UrlSerializer,
-    responses={
-        200: openapi.Response(
-            description="Shortened URL",
-            examples={
-                'application/json': {
-                    'url': 'https://www.google.com',
-                    'short_url': 'random string',
-                    'on_clicks': 0,
-                    'created': '2020-05-17T19:01:41.000Z'
-                }
-            }
-        ),
-        400: openapi.Response(
-            description="Bad request",
-            examples={
-                'application/json': {
-                    'url': ['Enter a valid URL.']
-                }
-            }
-        ),
-    }
-))
+
+@method_decorator(name='post',
+                  decorator=swagger_auto_schema(
+                      operation_summary="Get a shortened URL",
+                      operation_id="url_shortener_get_short_url",
+                      request_body=serializers.UrlSerializer,
+                      responses={
+                          200:
+                          openapi.Response(description="Shortened URL",
+                                           examples={
+                                               'application/json': {
+                                                   'url':
+                                                   'https://www.google.com',
+                                                   'short_url':
+                                                   'random string',
+                                                   'on_clicks':
+                                                   0,
+                                                   'created':
+                                                   '2020-05-17T19:01:41.000Z'
+                                               }
+                                           }),
+                          400:
+                          openapi.Response(description="Bad request",
+                                           examples={
+                                               'application/json': {
+                                                   'url':
+                                                   ['Enter a valid URL.']
+                                               }
+                                           }),
+                      }))
 class UrlShortenerCreateView(generics.CreateAPIView):
     """
     A URL shortener reduces the number of characters in a URL, making it easier to read, remember, and share.
@@ -74,15 +73,6 @@ class UrlShortenerCreateView(generics.CreateAPIView):
     """
     serializer_class = serializers.UrlSerializer
 
-    def __init__(self):
-        super().__init__()
-        # Set the generator to be used
-        last_url = Url.objects.last()
-        seed = last_url.id if last_url else 0
-        max_length = Url._meta.get_field('short_url').max_length
-        self.generator = RandomGenerator(ascii_letters + digits, max_length,
-                                         seed)
-
     def create(self, request, *args, **kwargs):
         # Check if the URL has already been shortened
         if Url.objects.filter(url=request.data['url']).exists():
@@ -90,10 +80,12 @@ class UrlShortenerCreateView(generics.CreateAPIView):
         super().create(request, *args, **kwargs)
         response = Url.objects.filter(url=request.data['url']).values()[0]
         del response['id']
-        cache.set(response['short_url'], {
-            'url': response['url'],
-            'on_clicks': response['on_clicks'],
-            'created': response['created']})
+        cache.set(
+            response['short_url'], {
+                'url': response['url'],
+                'on_clicks': response['on_clicks'],
+                'created': response['created']
+            })
         # Delete the cache urls
         if cache.has_key('/urls/'):
             cache.delete('/urls/')
@@ -107,26 +99,28 @@ class UrlShortenerCreateView(generics.CreateAPIView):
         except:
             return Response({'error': 'Invalid URL'}, status=400)
         return super().post(request, *args, **kwargs)
-        
-@method_decorator(name='get', decorator=swagger_auto_schema(
-    operation_summary="Get list of URLs",
-    operation_id="url_shortener_get_original_url",
-    responses={
-        200: openapi.Response(
-            description="List of URLs",
-            examples={
-                'application/json': [
-                    {
-                        'url': 'https://www.google.com',
-                        'short_url': 'random string',
-                        'on_clicks': 0,
-                        'created': '2020-05-17T19:01:41.000Z'
-                    }
-                ]
-            }
-        ),
-    }
-))
+
+
+@method_decorator(name='get',
+                  decorator=swagger_auto_schema(
+                      operation_summary="Get list of URLs",
+                      operation_id="url_shortener_get_original_url",
+                      responses={
+                          200:
+                          openapi.Response(description="List of URLs",
+                                           examples={
+                                               'application/json': [{
+                                                   'url':
+                                                   'https://www.google.com',
+                                                   'short_url':
+                                                   'random string',
+                                                   'on_clicks':
+                                                   0,
+                                                   'created':
+                                                   '2020-05-17T19:01:41.000Z'
+                                               }]
+                                           }),
+                      }))
 class UrlListView(generics.ListAPIView):
     """
     Get a list of all shortened URLs.
@@ -136,9 +130,9 @@ class UrlListView(generics.ListAPIView):
     The list is ordered by the number of times the shortened URL has been clicked.
     """
     # queryset with fields url, short_url, created
-    queryset = Url.objects.all().values('url', 'short_url', 'created')
+    queryset = Url.objects.all()
     serializer_class = serializers.UrlSerializerList
-    
+
     def get(self, request):
         _cache = cache.get("/urls/")
         if _cache:
@@ -147,51 +141,48 @@ class UrlListView(generics.ListAPIView):
 
         cache.set("/urls/", response.data)
         return response
-    
-@method_decorator(name='get', decorator=swagger_auto_schema(
-    operation_summary="Get details of a shortened URL",
-    operation_description="Returns the details of a shortened URL.",
-    operation_id="url_shortener_get_delete_url",
-    responses={
-        200: openapi.Response(
-            description="URL",
-            examples={
-                'application/json': {
-                    'url': 'https://www.google.com',
-                    'short_url': 'random string',
-                    'on_clicks': 0,
-                    'created': '2020-05-17T19:01:41.000Z'
-                }
-            }
-        ),
-        404: openapi.Response(
-            description="Not found",
-            examples={
-                'application/json': {
+
+
+@method_decorator(
+    name='get',
+    decorator=swagger_auto_schema(
+        operation_summary="Get details of a shortened URL",
+        operation_description="Returns the details of a shortened URL.",
+        operation_id="url_shortener_get_delete_url",
+        responses={
+            200:
+            openapi.Response(description="URL",
+                             examples={
+                                 'application/json': {
+                                     'url': 'https://www.google.com',
+                                     'short_url': 'random string',
+                                     'on_clicks': 0,
+                                     'created': '2020-05-17T19:01:41.000Z'
+                                 }
+                             }),
+            404:
+            openapi.Response(
+                description="Not found",
+                examples={'application/json': {
                     'detail': 'URL not found'
-                }
-            }
-        ),
-    }
-))
-@method_decorator(name='delete', decorator=swagger_auto_schema(
-    operation_summary="Delete a shortened URL",
-    operation_description="Deletes a shortened URL.",
-    operation_id="url_shortener_delete_url",
-    responses={
-        204: openapi.Response(
-            description="URL deleted",
-        ),
-        404: openapi.Response(
-            description="Not found",
-            examples={
-                'application/json': {
-                    'detail': 'URL not found'
-                }
-            }
-        ),
-    }
-))
+                }}),
+        }))
+@method_decorator(name='delete',
+                  decorator=swagger_auto_schema(
+                      operation_summary="Delete a shortened URL",
+                      operation_description="Deletes a shortened URL.",
+                      operation_id="url_shortener_delete_url",
+                      responses={
+                          204:
+                          openapi.Response(description="URL deleted", ),
+                          404:
+                          openapi.Response(description="Not found",
+                                           examples={
+                                               'application/json': {
+                                                   'detail': 'URL not found'
+                                               }
+                                           }),
+                      }))
 class UrlDetailView(generics.RetrieveDestroyAPIView):
     """
     Get/Delete details of a shortened URL.
@@ -204,11 +195,11 @@ class UrlDetailView(generics.RetrieveDestroyAPIView):
     """
     queryset = Url.objects.all()
     serializer_class = serializers.UrlSerializerDetail
-    
-    def get_object(self):
+
+    def get(self, request, *args, **kwargs):
         _cache = cache.get(self.kwargs['short_url'])
         if _cache:
-            return _cache
+            return Response(_cache)
         obj = Url.objects.filter(short_url=self.kwargs['short_url']).first()
         if obj:
             result = {
@@ -217,51 +208,58 @@ class UrlDetailView(generics.RetrieveDestroyAPIView):
                 'created': obj.created
             }
             cache.set(self.kwargs['short_url'], result)
-            return obj
+            return Response(result)
         else:
-            raise NotFound(detail='URL not found', code=404)
-        
+            return Response({'message': 'URL not found'}, status=404)
+
     def delete(self, request, *args, **kwargs):
         if cache.has_key(self.kwargs['short_url']):
             cache.delete(self.kwargs['short_url'])
-        Url.objects.filter(short_url=self.kwargs['short_url']).delete()
-        return Response(status=204)
+        if cache.has_key('/urls/'):
+            cache.delete('/urls/')
 
-@method_decorator(name='get', decorator=swagger_auto_schema(
-    operation_summary="Redirect to original URL",
-    operation_description="Redirects to the original URL.",
-    operation_id="url_shortener_redirect",
-    responses={
-        200: None,
-        302: openapi.Response(
-            description="Redirect to original URL",
-        ),
-        404: openapi.Response(
-            description="Not found",
-            examples={
-                'application/json': {
+        obj = Url.objects.filter(short_url=self.kwargs['short_url'])
+        if obj:
+            obj.delete()
+            return Response({'message': 'URL deleted successfully.'},
+                            status=204)
+        return Response({'message': 'URL not found'}, status=404)
+
+
+@method_decorator(
+    name='get',
+    decorator=swagger_auto_schema(
+        operation_summary="Redirect to original URL",
+        operation_description="Redirects to the original URL.",
+        operation_id="url_shortener_redirect",
+        responses={
+            200:
+            None,
+            302:
+            openapi.Response(description="Redirect to original URL", ),
+            404:
+            openapi.Response(
+                description="Not found",
+                examples={'application/json': {
                     'detail': 'URL not found'
-                }
-            }
-        ),
-    }
-))
+                }}),
+        }))
 class UrlRedirectView(APIView):
     """Redirect to the original URL"""
-    
+
     def update_on_clicks(self, short_url):
         url = Url.objects.filter(short_url=short_url).first()
         if url:
             url.on_clicks += 1
             url.save()
-            
+
     def get(self, request, short_url):
         _cache = cache.get(short_url)
         if _cache:
             url = _cache['url']
             _cache['on_clicks'] += 1
             cache.set(short_url, _cache)
-            thread = Thread(target=self.update_on_clicks, args=(short_url,))
+            thread = Thread(target=self.update_on_clicks, args=(short_url, ))
             thread.start()
         else:
             obj = Url.objects.filter(short_url=short_url).first()
