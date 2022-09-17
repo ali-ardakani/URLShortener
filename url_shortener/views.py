@@ -15,6 +15,9 @@ from .short_url_generator.generator import RandomGenerator
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from django.utils.decorators import method_decorator
+from django.core.cache import cache
+from threading import Thread
+from django.views.decorators.cache import cache_page
 
 
 class WelcomeView(generics.GenericAPIView):
@@ -87,26 +90,14 @@ class UrlShortenerCreateView(generics.CreateAPIView):
         super().create(request, *args, **kwargs)
         response = Url.objects.filter(url=request.data['url']).values()[0]
         del response['id']
+        cache.set(response['short_url'], {
+            'url': response['url'],
+            'on_clicks': response['on_clicks'],
+            'created': response['created']})
+        # Delete the cache urls
+        if cache.has_key('/urls/'):
+            cache.delete('/urls/')
         return Response(response, status=201)
-
-    # def perform_create(self, serializer):
-        # This is because if for any reason we have a duplicate short_url
-        # (such as it was changed manually in the database),
-        # it will be caught by the while loop.
-        # (This rarely happens, and if it happens, it quickly gets fixed.(just for prevention))
-        # while True:
-        #     short_url = self.generator.generate()
-        #     if Url.objects.filter(short_url=short_url).exists():
-        #         last_id = Url.objects.last().id
-        #         if self.generator.seed == last_id:
-        #             self.generator.seed += 1
-        #         else:
-        #             self.generator.seed = last_id
-        #         short_url = self.generator.generate()
-        #     else:
-        #         break
-        # serializer.save(short_url=self.generator.generate())
-        # serializer.save()
 
     def post(self, request, *args, **kwargs):
         # Validate the URL
@@ -116,7 +107,7 @@ class UrlShortenerCreateView(generics.CreateAPIView):
         except:
             return Response({'error': 'Invalid URL'}, status=400)
         return super().post(request, *args, **kwargs)
-
+        
 @method_decorator(name='get', decorator=swagger_auto_schema(
     operation_summary="Get list of URLs",
     operation_id="url_shortener_get_original_url",
@@ -144,9 +135,18 @@ class UrlListView(generics.ListAPIView):
     ----
     The list is ordered by the number of times the shortened URL has been clicked.
     """
+    # queryset with fields url, short_url, created
+    queryset = Url.objects.all().values('url', 'short_url', 'created')
+    serializer_class = serializers.UrlSerializerList
     
-    queryset = Url.objects.all().order_by('-on_clicks')
-    serializer_class = serializers.UrlSerializer
+    def get(self, request):
+        _cache = cache.get("/urls/")
+        if _cache:
+            return Response(_cache)
+        response = super().get(request)
+
+        cache.set("/urls/", response.data)
+        return response
     
 @method_decorator(name='get', decorator=swagger_auto_schema(
     operation_summary="Get details of a shortened URL",
@@ -203,14 +203,29 @@ class UrlDetailView(generics.RetrieveDestroyAPIView):
     Deletes a shortened URL.
     """
     queryset = Url.objects.all()
-    serializer_class = serializers.UrlSerializer
+    serializer_class = serializers.UrlSerializerDetail
     
     def get_object(self):
-        url = Url.objects.filter(short_url=self.kwargs['short_url']).first()
-        if url:
-            return url
+        _cache = cache.get(self.kwargs['short_url'])
+        if _cache:
+            return _cache
+        obj = Url.objects.filter(short_url=self.kwargs['short_url']).first()
+        if obj:
+            result = {
+                'url': obj.url,
+                'on_clicks': obj.on_clicks,
+                'created': obj.created
+            }
+            cache.set(self.kwargs['short_url'], result)
+            return obj
         else:
             raise NotFound(detail='URL not found', code=404)
+        
+    def delete(self, request, *args, **kwargs):
+        if cache.has_key(self.kwargs['short_url']):
+            cache.delete(self.kwargs['short_url'])
+        Url.objects.filter(short_url=self.kwargs['short_url']).delete()
+        return Response(status=204)
 
 @method_decorator(name='get', decorator=swagger_auto_schema(
     operation_summary="Redirect to original URL",
@@ -233,10 +248,32 @@ class UrlDetailView(generics.RetrieveDestroyAPIView):
 ))
 class UrlRedirectView(APIView):
     """Redirect to the original URL"""
-    def get(self, request, short_url):
+    
+    def update_on_clicks(self, short_url):
         url = Url.objects.filter(short_url=short_url).first()
         if url:
             url.on_clicks += 1
             url.save()
-            return HttpResponseRedirect(url.url)
-        return Response({'error': 'URL not found'}, status=404)
+            
+    def get(self, request, short_url):
+        _cache = cache.get(short_url)
+        if _cache:
+            url = _cache['url']
+            _cache['on_clicks'] += 1
+            cache.set(short_url, _cache)
+            thread = Thread(target=self.update_on_clicks, args=(short_url,))
+            thread.start()
+        else:
+            obj = Url.objects.filter(short_url=short_url).first()
+            if obj:
+                url = obj.url
+                obj.on_clicks += 1
+                obj.save()
+                cache.set(short_url, {
+                    'url': url,
+                    'on_clicks': obj.on_clicks,
+                    'created': obj.created
+                })
+            else:
+                return Response({'error': 'URL not found'}, status=404)
+        return HttpResponseRedirect(url)

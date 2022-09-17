@@ -1,6 +1,7 @@
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
+from django.core.cache import cache
 
 class WelcomeTest(APITestCase):
     def test_welcome(self):
@@ -14,6 +15,8 @@ class UrlShortenerTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['url'], 'https://www.google.com/')
         self.assertEqual(len(response.data['short_url']), 6)
+        # test cache
+        self.assertEqual(cache.get(response.data['short_url'])["url"], 'https://www.google.com/')
         
     def test_shorten_invalid_url(self):
         response = self.client.post('/url_shortener/', {'url': 'invalid_url'}, format='json')
@@ -37,6 +40,8 @@ class UrlShortenerTest(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['url'], 'https://www.google.com/')
         self.assertEqual(len(response.data[0]['short_url']), 6)
+        # test cache
+        self.assertEqual(cache.get('/urls/'), response.data)
         
     def test_info(self):
         response = self.client.post('/url_shortener/', {'url': 'https://www.google.com/'}, format='json')
@@ -45,8 +50,11 @@ class UrlShortenerTest(APITestCase):
         response = self.client.get(f'/info/{short_url}/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['url'], 'https://www.google.com/')
-        self.assertEqual(response.data['short_url'], short_url)
         self.assertEqual(response.data['on_clicks'], 0)
+        # test cache
+        _cache = cache.get(short_url)
+        self.assertEqual(_cache['url'], 'https://www.google.com/')
+        self.assertEqual(_cache['on_clicks'], 0)
         
     def test_invalid_info(self):
         response = self.client.get('/info/invalid_url/')
@@ -60,6 +68,8 @@ class UrlShortenerTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         response = self.client.get(f'/info/{short_url}/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        # test cache
+        self.assertEqual(cache.get(f'/info/{short_url}/'), None)
         
     def test_redirect(self):
         response = self.client.post('/url_shortener/', {'url': 'https://www.google.com/'}, format='json')
@@ -71,7 +81,6 @@ class UrlShortenerTest(APITestCase):
         response = self.client.get(f'/info/{short_url}/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['url'], 'https://www.google.com/')
-        self.assertEqual(response.data['short_url'], short_url)
         self.assertEqual(response.data['on_clicks'], 1)
     
     def test_invalid_url(self):

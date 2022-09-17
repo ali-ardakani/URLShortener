@@ -10,3 +10,13 @@ class UrlSerializer(serializers.ModelSerializer):
         model = Url
         fields = ('url', 'short_url', 'on_clicks', 'created')
         read_only_fields = ('short_url', 'on_clicks', 'created')
+        
+class UrlSerializerDetail(serializers.ModelSerializer):
+    class Meta:
+        model = Url
+        fields = ('url', 'on_clicks', 'created')
+        
+class UrlSerializerList(serializers.ModelSerializer):
+    class Meta:
+        model = Url
+        fields = ('url', 'short_url', 'created')
