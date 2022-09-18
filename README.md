@@ -87,8 +87,15 @@ curl -X GET "http://localhost:8000/urls/" -H "accept: application/json"
 <h4>Reroute to URL</h4>
 
 ```bash
-curl -X GET "http://localhost:8000/url/abc123/" -H "accept: application/json"
+curl -X GET "http://localhost:8000/url/abc123/" -I -o /dev/null -w '%{http_code}\n' -s
 ```
+
+<!-- Response -->
+
+```bash
+302
+```
+
 Note: This will redirect you to the URL.
 
 </p>
@@ -104,7 +111,7 @@ curl -X GET "http://localhost:8000/info/abc123/" -H "accept: application/json"
 ```json
 {
   "url": "https://www.google.com/",
-  "on_clicks": 0,
+  "on_clicks": 1,
   "created": "2021-09-12T20:00:00.000000Z"
 }
 ```
