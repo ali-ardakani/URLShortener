@@ -98,7 +98,7 @@ class UrlShortenerTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         short_url = response.data['short_url']
         response = self.client.get(f'/url/{short_url}/')
-        self.assertEqual(response.status_code, status.HTTP_302_FOUND)
+        self.assertEqual(response.status_code, status.HTTP_301_MOVED_PERMANENTLY)
         self.assertEqual(response.url, 'https://www.google.com/')
         response = self.client.get(f'/info/{short_url}/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)

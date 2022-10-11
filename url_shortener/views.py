@@ -2,7 +2,7 @@ from threading import Thread
 
 from django.core.cache import cache
 from django.core.validators import URLValidator
-from django.http import HttpResponseRedirect
+from django.http import HttpResponsePermanentRedirect
 from django.utils.decorators import method_decorator
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
@@ -235,7 +235,7 @@ class UrlDetailView(generics.RetrieveDestroyAPIView):
         responses={
             200:
             None,
-            302:
+            301:
             openapi.Response(description="Redirect to original URL", ),
             404:
             openapi.Response(
@@ -274,4 +274,4 @@ class UrlRedirectView(APIView):
                 })
             else:
                 return Response({'error': 'URL not found'}, status=404)
-        return HttpResponseRedirect(url)
+        return HttpResponsePermanentRedirect(url)
